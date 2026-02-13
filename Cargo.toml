@@ -3,5 +3,10 @@ name = "clockwork"
 version = "0.1.0"
 edition = "2024"
 
+[lib]
+name = "watchface"
+path = "src/watchface/lib.rs"
+crate-type = ["lib"]
+
 [dependencies]
 bevy = "0.18.0"
