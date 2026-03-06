@@ -1,3 +1,4 @@
+use std::f64::consts::PI;
 use std::iter::zip;
 
 use bevy::asset::RenderAssetUsages;
@@ -8,7 +9,7 @@ use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 #[derive(Copy,Clone,Default)]
 pub struct Hand {
     ///Length of the hand, expressed as a fraction of the radius of the watch.
-    length:f32, 
+    length:f64, 
     ///Width of the hand, expressed in pixels.
     width:u8,
     ///Color of the hand.
@@ -16,7 +17,9 @@ pub struct Hand {
 }
 
 impl Hand {
-    pub fn new(length:f32,width:u8,color:Color) -> Self {
+    pub fn new(length:f64,width:u8,color:Color) -> Self {
+        assert!(length > 0.0, "A zero-length hand would be invisible.");
+        assert!(length <= 1.0, "A hand with length greater than 1.0 is not allowed.");
         assert!(width > 0,"A zero-width hand would be invisible.");
         assert!(color.alpha()> 0.0,"A zero-alpha-color hand would be invisible.");
         Self {
@@ -33,7 +36,7 @@ pub struct Watchface<const H:usize> {
     ///Progress of each hand's turn, as a fraction of a full turn.
     pub turn:[f64;H],
     ///Handle to the image data being updated.
-    image:Handle<Image>
+    pub image:Handle<Image>
 }
 
 
@@ -70,9 +73,36 @@ pub fn watchface_system<const H:usize>(
         let watch_image = images.get_mut(&current_watch.image).expect("Could not fetch watch image.");
         //Step 2: clear the image.
         watch_image.clear(&(Srgba::NONE.to_u8_array()));
+        let center_pix_distance = watch_image.size().x << 1;
+        let center_distance = center_pix_distance as f64; //Should be half the width/height; after all, the image is supposed to be square.
         //Step 3: draw the hands, back-to-front.
         for (hand,turn) in zip(current_watch.hands.iter(),current_watch.turn.iter()) {
+            //Step 3a: Figure out where the tip of the hand is.
+            //Since I want the hand to point up at a turn of 0.0, subtract a quarter-turn.
+            let turn_rad = (turn * (PI * 2.0)) - (0.5 * PI);
+            //The location of the tip of the hand is dependent on:
+            // - the center of rotation
+            // - the length of the hand
+            // - the current angle of the hand
+            let hand_x = center_distance + (turn_rad.cos() * center_distance * hand.length);
+            let hand_y = center_distance + (turn_rad.sin() * center_distance * hand.length);
 
+            let hand_pix_x = hand_x.floor() as u32;
+            let hand_pix_y = hand_y.floor() as u32;
+            // Time for Bresenham's line drawing algorithm
+            let dx = hand_pix_x.saturating_sub(center_pix_distance);
+            let dy = hand_pix_y.saturating_sub(center_pix_distance);
+            let mut capital_d = 2 * dy - dx;
+            let mut y = dy;
+            for current_x in center_pix_distance..hand_pix_x {
+                watch_image.set_color_at(current_x, y, hand.color).expect("Could not set color!");
+                if capital_d > 0 {
+                    y += 1;
+                    capital_d += 2 * (dy - dx)
+                } else {
+                    capital_d += 2*dy;
+                }
+            }
         }
     }
 }
