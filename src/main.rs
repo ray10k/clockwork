@@ -7,8 +7,7 @@ fn main() {
         .add_plugins(DefaultPlugins)
         .insert_resource(Time::<Fixed>::from_hz(100.0))
         .add_systems(Startup, setup)
-        .add_systems(FixedUpdate, tick)
-        .add_systems(FixedUpdate,watchface_system::<3>)
+        .add_systems(FixedUpdate, (tick,watchface_system::<3>))
         .run();
 }
 
@@ -18,7 +17,10 @@ fn setup(mut commands: Commands, images: ResMut<Assets<Image>>) {
         Hand::new(0.9, 1, Color::BLACK),
         Hand::new(0.7,1,Color::srgb(1.0, 0.0, 0.0)),
         Hand::new(0.3,1,Color::srgb(0.0, 1.0, 0.0))];
-    let watch = make_watchface::<3>(&hands,128,images);
+    let mut watch = make_watchface::<3>(&hands,128,images);
+    watch.turn[0] = 0.1;
+    watch.turn[1] = 0.2;
+    //Deliberately leaving the 3rd hand at 0%
     let watch_img = watch.image.clone();
     commands.spawn((watch,Transform::from_xyz(10.0, 10.0, 0.0),Sprite::from_image(watch_img)));
 }

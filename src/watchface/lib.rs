@@ -6,7 +6,7 @@ use bevy::prelude::*;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 
 /// One hand of a clock (per example, the hour hand or the minute hand.)
-#[derive(Copy,Clone,Default)]
+#[derive(Copy,Clone,Default,Debug)]
 pub struct Hand {
     ///Length of the hand, expressed as a fraction of the radius of the watch.
     length:f64, 
@@ -29,7 +29,7 @@ impl Hand {
 }
 
 /// The hands of a clock. Will render on a transparent background.
-#[derive(Component)]
+#[derive(Component,Debug)]
 pub struct Watchface<const H:usize> {
     ///Visual data about how to render the hands of the clock, back-to-front order.
     hands:[Hand;H],
@@ -73,12 +73,19 @@ pub fn watchface_system<const H:usize>(
         let watch_image = images.get_mut(&current_watch.image).expect("Could not fetch watch image.");
         //Step 2: clear the image.
         watch_image.clear(&(Srgba::NONE.to_u8_array()));
-        let center_pix_distance = watch_image.size().x << 1;
+        //Debugging step: Add some pixels that are always set.
+        watch_image.set_color_at(0, 0, Color::WHITE).expect("Could not set color.");
+        watch_image.set_color_at(1, 0, Color::linear_rgba(1.0,0.0,0.0,1.0)).expect("Could not set color.");
+        watch_image.set_color_at(0, 1, Color::linear_rgba(0.0, 1.0, 0.0, 1.0)).expect("Could not set color.");
+        watch_image.set_color_at(1, 1, Color::linear_rgba(0.0, 0.0, 1.0, 1.0)).expect("Could not set color.");
+        
+        let center_pix_distance = (watch_image.size().x >> 1) as i32;
         let center_distance = center_pix_distance as f64; //Should be half the width/height; after all, the image is supposed to be square.
         //Step 3: draw the hands, back-to-front.
         for (hand,turn) in zip(current_watch.hands.iter(),current_watch.turn.iter()) {
             //Step 3a: Figure out where the tip of the hand is.
             //Since I want the hand to point up at a turn of 0.0, subtract a quarter-turn.
+
             let turn_rad = (turn * (PI * 2.0)) - (0.5 * PI);
             //The location of the tip of the hand is dependent on:
             // - the center of rotation
@@ -87,20 +94,41 @@ pub fn watchface_system<const H:usize>(
             let hand_x = center_distance + (turn_rad.cos() * center_distance * hand.length);
             let hand_y = center_distance + (turn_rad.sin() * center_distance * hand.length);
 
-            let hand_pix_x = hand_x.floor() as u32;
-            let hand_pix_y = hand_y.floor() as u32;
+            let hand_pix_x = hand_x.floor() as i32;
+            let hand_pix_y = hand_y.floor() as i32;
             // Time for Bresenham's line drawing algorithm
-            let dx = hand_pix_x.saturating_sub(center_pix_distance);
-            let dy = hand_pix_y.saturating_sub(center_pix_distance);
-            let mut capital_d = 2 * dy - dx;
-            let mut y = dy;
-            for current_x in center_pix_distance..hand_pix_x {
-                watch_image.set_color_at(current_x, y, hand.color).expect("Could not set color!");
-                if capital_d > 0 {
-                    y += 1;
-                    capital_d += 2 * (dy - dx)
-                } else {
-                    capital_d += 2*dy;
+            let mut x0 = center_pix_distance;
+            let mut y0 = center_pix_distance;
+            let dx = (hand_pix_x - center_pix_distance).abs();
+            let slope_x = if hand_pix_x < center_pix_distance {1} else {-1};
+            let dy = (hand_pix_y - center_pix_distance).abs() * -1;
+            let slope_y = if hand_pix_y < center_pix_distance {1} else {-1};
+            let mut error = dx + dy;
+
+            println!("Initial values: ({x0};{y0}) to ({hand_pix_x};{hand_pix_y}). Slopes ({slope_x};{slope_y}). Deltas ({dx};{dy})");
+            let mut counter = 0;
+            loop {
+                counter += 1;
+                if counter > 60 {
+                    break;
+                }
+                watch_image.set_color_at(x0 as u32, y0 as u32, hand.color).expect("Could not set color.");
+                let e = 2 * error;
+                if e >= dy {
+                    if x0 == hand_pix_x {
+                        break;
+                    }
+                    error += dy;
+                    x0 += slope_x;
+                    x0 = x0.max(0);
+                }
+                if e <= dx {
+                    if y0 == hand_pix_y{
+                        break;
+                    }
+                    error += dx;
+                    y0 += slope_y;
+                    y0 = y0.max(0);
                 }
             }
         }
